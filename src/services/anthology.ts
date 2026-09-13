@@ -42,6 +42,7 @@ export function deleteAnthology(id: string): void {
 // ---------------- 快照与比对 ----------------
 
 const SNAPSHOT_FIELDS: Array<{ key: keyof EntrySnapshot; label: string }> = [
+  { key: 'routeName', label: '线路' },
   { key: 'segment', label: '区间' },
   { key: 'seatDirection', label: '座位方向' },
   { key: 'weather', label: '天气' },
@@ -52,8 +53,17 @@ const SNAPSHOT_FIELDS: Array<{ key: keyof EntrySnapshot; label: string }> = [
   { key: 'timestamp', label: '记录时间' },
 ]
 
+/** 记录时间以 年/月/日 时:分 展示，避免直接对比 ISO 串 */
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 export function snapshotFromScene(scene: WindowScene): EntrySnapshot {
   return {
+    routeName: scene.routeName,
     segment: scene.segment,
     seatDirection: scene.seatDirection,
     weather: scene.weather,
@@ -65,11 +75,18 @@ export function snapshotFromScene(scene: WindowScene): EntrySnapshot {
   }
 }
 
-export function diffSnapshot(snapshot: EntrySnapshot, scene: WindowScene): EntryFieldChange[] {
+export function diffSnapshot(
+  snapshot: Partial<EntrySnapshot>,
+  scene: WindowScene,
+): EntryFieldChange[] {
   const changes: EntryFieldChange[] = []
   for (const { key, label } of SNAPSHOT_FIELDS) {
-    const from = String(snapshot[key] ?? '')
-    const to = String(scene[key] ?? '')
+    let from = String(snapshot[key] ?? '')
+    let to = String(scene[key] ?? '')
+    if (key === 'timestamp') {
+      from = from ? formatTime(from) : ''
+      to = to ? formatTime(to) : ''
+    }
     if (from !== to) changes.push({ label, from, to })
   }
   return changes
@@ -91,7 +108,8 @@ export interface ValidateTarget {
 
 /**
  * 发布闸：标题/主题必填、同一条线路、至少三条记录、
- * 不得重复引用、不得引用不存在的记录。返回全部问题（空数组即通过）。
+ * 不得重复引用、不得引用不存在的记录、
+ * 相邻段之间（末段除外）必须写转场说明。返回全部问题（空数组即通过）。
  */
 export function validateAnthology(
   target: ValidateTarget,
@@ -142,6 +160,14 @@ export function validateAnthology(
         message: `第 ${i + 1} 段属于线路「${scene.routeName}」，与本册线路「${target.routeName}」不一致`,
       })
     }
+    // 末段是收束，可留空；其余每段之后的转场说明必填
+    if (i < target.entries.length - 1 && !entry.transition.trim()) {
+      issues.push({
+        code: 'TRANSITION_EMPTY',
+        entryIndex: i,
+        message: `第 ${i + 1} 段到第 ${i + 2} 段之间缺少转场说明`,
+      })
+    }
   })
 
   return issues
@@ -170,7 +196,12 @@ export function checkAnthologyHealth(
     if (!snapshot) {
       return { sceneId: entry.sceneId, status: 'ok' as const, changes: [] }
     }
-    const changes = diffSnapshot(snapshot, scene)
+    // 兼容早期版本快照（无 routeName）：以发布册线路兜底
+    const normalized: EntrySnapshot = {
+      ...snapshot,
+      routeName: snapshot.routeName ?? version.routeName,
+    }
+    const changes = diffSnapshot(normalized, scene)
     return {
       sceneId: entry.sceneId,
       status: changes.length > 0 ? ('changed' as const) : ('ok' as const),
@@ -183,6 +214,53 @@ export function summarizeHealth(health: EntryHealth[]) {
   const missing = health.filter((h) => h.status === 'missing').length
   const changed = health.filter((h) => h.status === 'changed').length
   return { missing, changed, healthy: missing === 0 && changed === 0 }
+}
+
+export interface AnthologyViewItem {
+  entry: Anthology['entries'][number]
+  scene: WindowScene | undefined
+  snapshot: EntrySnapshot | undefined
+  status: EntryHealth['status']
+  changes: EntryFieldChange[]
+}
+
+/**
+ * 列表角标与预览页共用的唯一判定入口：
+ * 以最近发布版本为准，逐条返回素材当前状态（ok/changed/missing）与字段差异。
+ */
+export function buildAnthologyView(
+  anthology: Anthology,
+  scenes: WindowScene[],
+): AnthologyViewItem[] {
+  const version = getLatestVersion(anthology)
+  if (!version) {
+    // 从未发布：按工作草稿渲染，不做健康判定
+    const map = new Map(scenes.map((s) => [s.id, s]))
+    return anthology.entries.map((entry) => ({
+      entry,
+      scene: map.get(entry.sceneId),
+      snapshot: undefined,
+      status: 'ok' as const,
+      changes: [],
+    }))
+  }
+  const healthList = checkAnthologyHealth(anthology, scenes)
+  const healthMap = new Map(healthList.map((h) => [h.sceneId, h]))
+  const sceneMap = new Map(scenes.map((s) => [s.id, s]))
+  return version.entries.map((entry) => {
+    const h = healthMap.get(entry.sceneId)
+    const snapshot = version.snapshots[entry.sceneId]
+    const normalizedSnapshot: EntrySnapshot | undefined = snapshot
+      ? { ...snapshot, routeName: snapshot.routeName ?? version.routeName }
+      : undefined
+    return {
+      entry,
+      scene: sceneMap.get(entry.sceneId),
+      snapshot: normalizedSnapshot,
+      status: h?.status ?? 'ok',
+      changes: h?.changes ?? [],
+    }
+  })
 }
 
 // ---------------- 线路册生命周期（纯函数，便于测试） ----------------

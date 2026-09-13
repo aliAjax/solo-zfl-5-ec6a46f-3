@@ -5,7 +5,6 @@ import {
 } from 'lucide-react'
 import { useAnthologyStore } from '@/store/useAnthologyStore'
 import { useSceneStore } from '@/store/useSceneStore'
-import { ensureSeedScenes } from '@/services/storage'
 import { formatTimestamp } from '@/utils/sceneHelpers'
 
 export default function AnthologyListPage() {
@@ -15,7 +14,6 @@ export default function AnthologyListPage() {
   const scenes = useSceneStore((s) => s.scenes)
 
   useEffect(() => {
-    ensureSeedScenes()
     loadScenes()
     loadAll()
   }, [loadScenes, loadAll])
@@ -57,7 +55,19 @@ export default function AnthologyListPage() {
           <div className="flex flex-col items-center justify-center py-24 text-mist-400">
             <div className="mb-4 text-6xl opacity-30">📒</div>
             <p className="mb-1 text-lg">还没有线路册</p>
-            <p className="text-sm">从一条线路上挑至少三段窗景，写下标题与主题</p>
+            {scenes.length === 0 ? (
+              <>
+                <p className="mb-4 text-sm">本地还没有任何窗景记录，先去采集几段</p>
+                <Link
+                  to="/"
+                  className="rounded-xl bg-dusk-400/15 px-4 py-2 text-sm text-dusk-300 transition hover:bg-dusk-400/25"
+                >
+                  去记录窗景
+                </Link>
+              </>
+            ) : (
+              <p className="text-sm">从一条线路上挑至少三段窗景，写下标题与主题</p>
+            )}
           </div>
         ) : (
           <div className="space-y-3">

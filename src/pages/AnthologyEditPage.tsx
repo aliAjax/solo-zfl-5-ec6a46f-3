@@ -126,6 +126,7 @@ export default function AnthologyEditPage() {
   const dupIdx = issueIndices('DUPLICATE_SCENE')
   const invalidIdx = issueIndices('INVALID_REFERENCE')
   const mixedIdx = issueIndices('MIXED_ROUTE')
+  const missingTransitionIdx = issueIndices('TRANSITION_EMPTY')
 
   const handlePublish = () => {
     // 先把防抖中的草稿落盘，再发布
@@ -370,8 +371,13 @@ export default function AnthologyEditPage() {
                           data={scene}
                           footer={
                             <div className="mt-3 border-t border-teal-800 pt-3">
-                              <label className="mb-1 block text-[11px] text-mist-400">
+                              <label className="mb-1 flex items-center gap-1.5 text-[11px] text-mist-400">
                                 转场说明{idx === entries.length - 1 ? '（末段，可留空）' : ' *'}
+                                {missingTransitionIdx.has(idx) && (
+                                  <span className="rounded bg-red-900/50 px-1.5 py-0.5 text-[10px] text-red-300">
+                                    缺少转场，发布前必填
+                                  </span>
+                                )}
                               </label>
                               <textarea
                                 value={entry.transition}
@@ -381,7 +387,11 @@ export default function AnthologyEditPage() {
                                     ? '为整册写一句收束…'
                                     : `写下从「${scene.segment}」走向下一段的过渡…`
                                 }
-                                className="h-16 w-full resize-none rounded-lg border border-teal-800 bg-teal-900/60 px-2.5 py-2 text-xs text-mist-100 outline-none focus:border-dusk-400"
+                                className={`h-16 w-full resize-none rounded-lg border bg-teal-900/60 px-2.5 py-2 text-xs text-mist-100 outline-none focus:border-dusk-400 ${
+                                  missingTransitionIdx.has(idx)
+                                    ? 'border-red-700/70'
+                                    : 'border-teal-800'
+                                }`}
                               />
                             </div>
                           }

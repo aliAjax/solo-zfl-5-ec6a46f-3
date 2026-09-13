@@ -36,6 +36,7 @@ export type AnthologyStatus = 'draft' | 'published'
 
 /** 发布时对素材定格的快照，用于日后比对失效与变更 */
 export interface EntrySnapshot {
+  routeName: string
   segment: string
   weather: Weather
   signText: string
@@ -89,6 +90,7 @@ export type IssueCode =
   | 'DUPLICATE_SCENE'
   | 'INVALID_REFERENCE'
   | 'MIXED_ROUTE'
+  | 'TRANSITION_EMPTY'
 
 export interface AnthologyIssue {
   code: IssueCode

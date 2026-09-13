@@ -6,26 +6,9 @@ import {
 } from 'lucide-react'
 import { useAnthologyStore } from '@/store/useAnthologyStore'
 import { useSceneStore } from '@/store/useSceneStore'
-import { getLatestVersion } from '@/services/anthology'
+import { buildAnthologyView, getLatestVersion } from '@/services/anthology'
 import { formatTimestamp } from '@/utils/sceneHelpers'
-import type { WindowScene } from '@/types'
 import SceneBlock from '@/components/SceneBlock'
-
-interface FieldChange {
-  label: string
-  from: string
-  to: string
-}
-
-const COMPARE_FIELDS: Array<{ key: keyof WindowScene; label: string }> = [
-  { key: 'segment', label: '区间' },
-  { key: 'seatDirection', label: '座位方向' },
-  { key: 'weather', label: '天气' },
-  { key: 'signText', label: '招牌文字' },
-  { key: 'treeDensity', label: '树木密度' },
-  { key: 'pedestrianStatus', label: '行人状态' },
-  { key: 'note', label: '观察笔记' },
-]
 
 export default function AnthologyPreviewPage() {
   const { id } = useParams<{ id: string }>()
@@ -44,51 +27,18 @@ export default function AnthologyPreviewPage() {
 
   const view = useMemo(() => {
     if (!anthology) return null
-    const published = anthology.status === 'published' && !!version
-    const sourceEntries = published ? version!.entries : anthology.entries
-    const map = new Map(scenes.map((s) => [s.id, s]))
-
-    const items = sourceEntries.map((entry) => {
-      const scene: WindowScene | undefined = map.get(entry.sceneId)
-      const snap = version?.snapshots[entry.sceneId]
-      const changes: FieldChange[] = []
-      if (published && scene && snap) {
-        for (const f of COMPARE_FIELDS) {
-          const from = String(snap[f.key as keyof typeof snap] ?? '')
-          const to = String(scene[f.key] ?? '')
-          if (from !== to) changes.push({ label: f.label, from, to })
-        }
-      }
-      return {
-        entry,
-        scene,
-        snap,
-        changes,
-        missing: published && !scene && !!snap,
-        changed: changes.length > 0,
-      }
-    })
-
+    const items = buildAnthologyView(anthology, scenes)
+    const published = anthology.status === 'published'
     return {
       published,
-      title: published ? version!.title : anthology.title,
-      theme: published ? version!.theme : anthology.theme,
-      routeName: published ? version!.routeName : anthology.routeName,
-      publishedAt: published ? version!.publishedAt : null,
+      title: published && version ? version.title : anthology.title,
+      theme: published && version ? version.theme : anthology.theme,
+      routeName: published && version ? version.routeName : anthology.routeName,
+      publishedAt: published && version ? version.publishedAt : null,
       items,
     }
   }, [anthology, scenes, version])
 
-  if (anthologies.length > 0 && !anthology) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-teal-950 text-mist-300">
-        <p className="mb-4">线路册不存在或已被删除</p>
-        <Link to="/anthologies" className="text-dusk-400 underline underline-offset-4">
-          返回选编台
-        </Link>
-      </div>
-    )
-  }
   if (!anthology || !view) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-teal-950 text-mist-300">
@@ -101,8 +51,8 @@ export default function AnthologyPreviewPage() {
   }
 
   const isDraft = !view.published
-  const missingCount = view.items.filter((h) => h.missing).length
-  const changedCount = view.items.filter((h) => h.changed).length
+  const missingCount = view.items.filter((h) => h.status === 'missing').length
+  const changedCount = view.items.filter((h) => h.status === 'changed').length
 
   const handleRevert = () => {
     revertToDraft(anthology.id)
@@ -150,7 +100,7 @@ export default function AnthologyPreviewPage() {
             {changedCount > 0 && (
               <p className="flex items-center gap-2 text-xs text-amber-300/90">
                 <AlertTriangle className="w-3.5 h-3.5" />
-                {changedCount} 段素材自发布后发生修改，差异已在对应段落标出
+                {changedCount} 段素材自发布后发生修改（含线路或记录时间变化），差异已在对应段落标出
               </p>
             )}
           </div>
@@ -194,36 +144,37 @@ export default function AnthologyPreviewPage() {
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-dusk-400/20 text-[10px] font-semibold text-dusk-300">
                     {idx + 1}
                   </span>
-                  {h.missing && (
+                  {h.status === 'missing' && (
                     <span className="flex items-center gap-1 text-red-300">
                       <Ban className="w-3 h-3" />素材已失效
                     </span>
                   )}
-                  {h.changed && (
+                  {h.status === 'changed' && (
                     <span className="flex items-center gap-1 text-amber-300">
-                      <AlertTriangle className="w-3 h-3" />素材已变更
+                      <AlertTriangle className="w-3 h-3" />
+                      素材已变更（{h.changes.map((c) => c.label).join('、')}）
                     </span>
                   )}
                 </div>
-                {h.missing && h.snap ? (
+                {h.status === 'missing' && h.snapshot ? (
                   <SceneBlock
                     data={{
-                      routeName: view.routeName,
-                      segment: h.snap.segment,
-                      weather: h.snap.weather,
-                      signText: h.snap.signText,
-                      treeDensity: h.snap.treeDensity,
-                      pedestrianStatus: h.snap.pedestrianStatus,
-                      note: h.snap.note,
-                      seatDirection: h.snap.seatDirection,
-                      timestamp: h.snap.timestamp,
+                      routeName: h.snapshot.routeName,
+                      segment: h.snapshot.segment,
+                      weather: h.snapshot.weather,
+                      signText: h.snapshot.signText,
+                      treeDensity: h.snapshot.treeDensity,
+                      pedestrianStatus: h.snapshot.pedestrianStatus,
+                      note: h.snapshot.note,
+                      seatDirection: h.snapshot.seatDirection,
+                      timestamp: h.snapshot.timestamp,
                     }}
                     health="missing"
                   />
                 ) : h.scene ? (
                   <SceneBlock
-                    data={{ ...h.scene, routeName: h.scene.routeName ?? view.routeName }}
-                    health={h.changed ? 'changed' : undefined}
+                    data={h.scene}
+                    health={h.status === 'changed' ? 'changed' : undefined}
                     changes={h.changes}
                   />
                 ) : (
