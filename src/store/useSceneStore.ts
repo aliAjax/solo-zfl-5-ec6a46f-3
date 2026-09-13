@@ -4,6 +4,7 @@ import {
   getAllScenes,
   saveScene as storageSaveScene,
   deleteScene as storageDeleteScene,
+  updateScene as storageUpdateScene,
   getScenesByRoute,
   getAllRouteNames,
   getRandomScene,
@@ -19,57 +20,61 @@ interface SceneState {
   loadAll: () => void
   saveScene: (data: SceneFormData) => void
   deleteScene: (id: string) => void
+  updateScene: (id: string, patch: Partial<WindowScene>) => void
   selectRoute: (routeName: string) => void
   refreshRandom: () => void
 }
 
-export const useSceneStore = create<SceneState>((set) => ({
-  scenes: [],
-  routeNames: [],
-  currentRouteScenes: [],
-  selectedRoute: '',
-  randomScene: null,
-
-  loadAll: () => {
+export const useSceneStore = create<SceneState>((set, get) => {
+  const reload = (selectedRoute: string) => {
     const scenes = getAllScenes()
     const routeNames = getAllRouteNames()
-    set({ scenes, routeNames })
-  },
+    const currentRouteScenes = selectedRoute
+      ? getScenesByRoute(selectedRoute)
+      : []
+    return { scenes, routeNames, currentRouteScenes }
+  }
 
-  saveScene: (data: SceneFormData) => {
-    const scene: WindowScene = {
-      ...data,
-      id: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-    }
-    storageSaveScene(scene)
-    const scenes = getAllScenes()
-    const routeNames = getAllRouteNames()
-    set((state) => {
-      const currentRouteScenes =
-        state.selectedRoute ? getScenesByRoute(state.selectedRoute) : []
-      return { scenes, routeNames, currentRouteScenes }
-    })
-  },
+  return {
+    // 创建时即从 localStorage 同步读取，首屏与刷新后无需等待
+    scenes: getAllScenes(),
+    routeNames: getAllRouteNames(),
+    currentRouteScenes: [],
+    selectedRoute: '',
+    randomScene: null,
 
-  deleteScene: (id: string) => {
-    storageDeleteScene(id)
-    const scenes = getAllScenes()
-    const routeNames = getAllRouteNames()
-    set((state) => {
-      const currentRouteScenes =
-        state.selectedRoute ? getScenesByRoute(state.selectedRoute) : []
-      return { scenes, routeNames, currentRouteScenes }
-    })
-  },
+    loadAll: () => {
+      set(reload(get().selectedRoute))
+    },
 
-  selectRoute: (routeName: string) => {
-    const currentRouteScenes = routeName ? getScenesByRoute(routeName) : []
-    set({ selectedRoute: routeName, currentRouteScenes })
-  },
+    saveScene: (data: SceneFormData) => {
+      const scene: WindowScene = {
+        ...data,
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+      }
+      storageSaveScene(scene)
+      set(reload(get().selectedRoute))
+    },
 
-  refreshRandom: () => {
-    const randomScene = getRandomScene()
-    set({ randomScene })
-  },
-}))
+    deleteScene: (id) => {
+      storageDeleteScene(id)
+      set(reload(get().selectedRoute))
+    },
+
+    updateScene: (id, patch) => {
+      storageUpdateScene(id, patch)
+      set(reload(get().selectedRoute))
+    },
+
+    selectRoute: (routeName: string) => {
+      const currentRouteScenes = routeName ? getScenesByRoute(routeName) : []
+      set({ selectedRoute: routeName, currentRouteScenes })
+    },
+
+    refreshRandom: () => {
+      const randomScene = getRandomScene()
+      set({ randomScene })
+    },
+  }
+})
